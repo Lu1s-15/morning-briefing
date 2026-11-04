@@ -42,21 +42,60 @@ def log(msg):
     print(f"[{datetime.now(TZ):%H:%M:%S}] {msg}", flush=True)
  
  
+class QuotaError(RuntimeError):
+    pass
+ 
+ 
+def quota_info(text):
+    """Holt die relevanten Kontingent Angaben aus einer 429 Antwort."""
+    try:
+        details = json.loads(text)["error"].get("details", [])
+    except Exception:
+        return text[:300]
+    out = []
+    for d in details:
+        for v in d.get("violations", []):
+            out.append(f"{v.get('quotaMetric', '')} / {v.get('quotaId', '')} / Limit {v.get('quotaValue', '?')}")
+        if d.get("retryDelay"):
+            out.append(f"retry in {d['retryDelay']}")
+    return "; ".join(out) or text[:300]
+ 
+ 
 def post(model, body, timeout=600):
-    """generateContent mit Wiederholungen bei Rate Limits und Serverfehlern."""
+    """generateContent mit Wiederholungen bei kurzfristigen Rate Limits und Serverfehlern."""
     last = None
-    for attempt in range(5):
+    for attempt in range(4):
         r = requests.post(f"{API}/models/{model}:generateContent", json=body, timeout=timeout,
                           headers={"x-goog-api-key": KEY, "Content-Type": "application/json"})
         if r.status_code == 200:
             return r.json()
-        last = f"{model}: HTTP {r.status_code} {r.text[:500]}"
+        if r.status_code == 429:
+            info = quota_info(r.text)
+            last = f"{model}: Kontingent erschöpft ({info})"
+            # Tageskontingent oder gar kein Gratiskontingent: Warten bringt nichts, nächstes Modell probieren
+            if "PerDay" in info or "Limit 0" in info or "free_tier" in info and "PerMinute" not in info:
+                raise QuotaError(last)
+            log(f"{last} ... warte {40 * (attempt + 1)}s")
+            time.sleep(40 * (attempt + 1))
+            continue
+        last = f"{model}: HTTP {r.status_code} {r.text[:800]}"
         if r.status_code in (400, 403, 404):
             break
-        wait = 30 * (attempt + 1)
-        log(f"{last[:200]} ... warte {wait}s")
-        time.sleep(wait)
-    raise RuntimeError(last)
+        log(f"{last[:200]} ... warte {30 * (attempt + 1)}s")
+        time.sleep(30 * (attempt + 1))
+    raise QuotaError(last) if last and "Kontingent" in last else RuntimeError(last)
+ 
+ 
+def with_fallback(models, fn):
+    """Probiert eine Liste von Modellen der Reihe nach durch."""
+    errors = []
+    for m in models:
+        try:
+            return fn(m)
+        except Exception as e:
+            log(f"{m} geht nicht: {str(e)[:300]}")
+            errors.append(str(e)[:300])
+    raise RuntimeError("Alle Modelle fehlgeschlagen:\n" + "\n".join(errors))
  
  
 def text_of(resp):
@@ -64,13 +103,13 @@ def text_of(resp):
     return "".join(p.get("text", "") for p in parts).strip()
  
  
-def pick_text_model():
-    """Wählt das neueste verfügbare Flash Textmodell, ausser TEXT_MODEL ist gesetzt."""
+def pick_text_models():
+    """Liste der Flash Textmodelle, neueste zuerst, Flash-Lite als Reserve am Schluss."""
     if os.environ.get("TEXT_MODEL"):
-        return os.environ["TEXT_MODEL"]
+        return [m for m in os.environ["TEXT_MODEL"].split(",") if m]
     r = requests.get(f"{API}/models?pageSize=1000", headers={"x-goog-api-key": KEY}, timeout=60)
     r.raise_for_status()
-    bad = ("tts", "image", "lite", "live", "audio", "embedding", "vision", "thinking", "exp", "learnlm", "robotics")
+    bad = ("tts", "image", "live", "audio", "embedding", "vision", "thinking", "exp", "learnlm", "robotics")
     cands = []
     for m in r.json().get("models", []):
         name = m["name"].split("/", 1)[1]
@@ -79,14 +118,15 @@ def pick_text_model():
         if "flash" not in name or any(b in name for b in bad):
             continue
         ver = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
-        if not ver:
+        if not ver or float(ver.group(1)) < 2.5:
             continue
-        preview = "preview" in name
-        cands.append((float(ver.group(1)), not preview, -len(name), name))
+        cands.append(("lite" not in name, float(ver.group(1)), "preview" not in name, -len(name), name))
     if not cands:
         raise RuntimeError("Kein passendes Gemini Flash Textmodell gefunden")
     cands.sort(reverse=True)
-    return cands[0][3]
+    names = [c[4] for c in cands][:8]
+    log("Modell Reihenfolge: " + ", ".join(names))
+    return names
  
  
 def load_instructions():
@@ -197,6 +237,7 @@ def tts(text):
                 return pcm, model
             errors.append(f"{model}: keine Audiodaten")
         except Exception as e:  # nächstes Modell probieren
+            log(f"{model} geht nicht: {str(e)[:300]}")
             errors.append(str(e)[:300])
     raise RuntimeError("TTS fehlgeschlagen: " + " | ".join(errors))
  
@@ -301,9 +342,9 @@ def main():
     eps = [e for e in eps if e["date"] != DATE]
  
     instr = load_instructions()
-    model = pick_text_model()
-    dossier, grounding = research(model, instr, recent_topics(eps))
-    script, notes = write_script(model, instr, dossier)
+    models = pick_text_models()
+    dossier, grounding = with_fallback(models, lambda m: research(m, instr, recent_topics(eps)))
+    script, notes = with_fallback(models, lambda m: write_script(m, instr, dossier))
     OUT.mkdir(exist_ok=True)
     (OUT / f"{DATE}-skript.txt").write_text(script, encoding="utf-8")
     (OUT / f"{DATE}-dossier.txt").write_text(dossier, encoding="utf-8")
