@@ -1,1 +1,69 @@
-
+name: Morning Briefing
+ 
+on:
+  schedule:
+    # Zeiten in UTC. Start um 04:00 Uhr Schweizer Zeit, Folge ist meist bis ca. 04:30 fertig.
+    - cron: "0 3 * 1,2,3,11,12 *"   # Winterzeit (MEZ)
+    - cron: "0 2 * 4-10 *"          # Sommerzeit (MESZ)
+  workflow_dispatch: {}              # manueller Start über "Run workflow"
+ 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+ 
+concurrency:
+  group: briefing
+  cancel-in-progress: false
+ 
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+ 
+      - name: Werkzeuge installieren
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install -q requests pillow
+ 
+      - name: Folge erzeugen
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python generate.py
+ 
+      - name: Folge als Release hochladen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          D=$(TZ=Europe/Zurich date +%Y-%m-%d)
+          gh release delete "folge-$D" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "folge-$D" "out/$D.mp3" "out/$D-skript.txt" "out/$D-dossier.txt" \
+            --title "$(cat out/title.txt)" --notes-file out/release-notes.txt
+          # Alte Folgen (über 30) aufräumen
+          gh release list --limit 200 --json tagName --jq '.[].tagName' | grep '^folge-' | sort -r | tail -n +31 | \
+            while read t; do gh release delete "$t" --yes --cleanup-tag; done
+ 
+      - name: Feed speichern
+        run: |
+          git config user.name "Morning Briefing Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/
+          git commit -m "Folge $(TZ=Europe/Zurich date +%Y-%m-%d)" || echo "nichts zu committen"
+          git push
+ 
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+ 
