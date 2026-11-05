@@ -1,46 +1,52 @@
 name: Morning Briefing
- 
+
 on:
   schedule:
-    # Zeiten in UTC. Start um 04:00 Uhr Schweizer Zeit, Folge ist meist bis ca. 04:30 fertig.
-    - cron: "0 3 * 1,2,3,11,12 *"   # Winterzeit (MEZ)
-    - cron: "0 2 * 4-10 *"          # Sommerzeit (MESZ)
+    # Zeiten in UTC. Zwei Versuche pro Morgen; der zweite überspringt sich, wenn die Folge schon da ist.
+    # Winterzeit (MEZ): 04:17 und 05:07 Uhr Schweizer Zeit
+    - cron: "17 3 * 1,2,3,11,12 *"
+    - cron: "7 4 * 1,2,3,11,12 *"
+    # Sommerzeit (MESZ): 04:17 und 05:07 Uhr Schweizer Zeit
+    - cron: "17 2 * 4-10 *"
+    - cron: "7 3 * 4-10 *"
   workflow_dispatch: {}              # manueller Start über "Run workflow"
- 
+
 permissions:
   contents: write
   pages: write
   id-token: write
- 
+
 concurrency:
   group: briefing
   cancel-in-progress: false
- 
+
 jobs:
   briefing:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
- 
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
- 
+
       - name: Werkzeuge installieren
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           pip install -q requests pillow
- 
+
       - name: Folge erzeugen
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: python generate.py
- 
+
       - name: Folge als Release hochladen
+        if: hashFiles('out/title.txt') != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -51,19 +57,22 @@ jobs:
           # Alte Folgen (über 30) aufräumen
           gh release list --limit 200 --json tagName --jq '.[].tagName' | grep '^folge-' | sort -r | tail -n +31 | \
             while read t; do gh release delete "$t" --yes --cleanup-tag; done
- 
+
       - name: Feed speichern
+        if: hashFiles('out/title.txt') != ''
         run: |
           git config user.name "Morning Briefing Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/
           git commit -m "Folge $(TZ=Europe/Zurich date +%Y-%m-%d)" || echo "nichts zu committen"
           git push
- 
+
       - uses: actions/configure-pages@v5
+        if: hashFiles('out/title.txt') != ''
       - uses: actions/upload-pages-artifact@v3
+        if: hashFiles('out/title.txt') != ''
         with:
           path: site
       - id: deploy
+        if: hashFiles('out/title.txt') != ''
         uses: actions/deploy-pages@v4
- 
