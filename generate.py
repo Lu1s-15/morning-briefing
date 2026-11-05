@@ -61,29 +61,32 @@ def quota_info(text):
     return "; ".join(out) or text[:300]
  
  
-def post(model, body, timeout=600):
-    """generateContent mit Wiederholungen bei kurzfristigen Rate Limits und Serverfehlern."""
+def post(model, body, timeout=300):
+    """generateContent. Wartet nur bei einem klar ausgewiesenen Minutenlimit, sonst sofort Fehler."""
     last = None
-    for attempt in range(4):
-        r = requests.post(f"{API}/models/{model}:generateContent", json=body, timeout=timeout,
-                          headers={"x-goog-api-key": KEY, "Content-Type": "application/json"})
+    for attempt in range(3):
+        try:
+            r = requests.post(f"{API}/models/{model}:generateContent", json=body, timeout=timeout,
+                              headers={"x-goog-api-key": KEY, "Content-Type": "application/json"})
+        except requests.RequestException as e:
+            last = f"{model}: Netzwerkfehler {e}"
+            time.sleep(15)
+            continue
         if r.status_code == 200:
             return r.json()
         if r.status_code == 429:
             info = quota_info(r.text)
-            last = f"{model}: Kontingent erschöpft ({info})"
-            # Tageskontingent oder gar kein Gratiskontingent: Warten bringt nichts, nächstes Modell probieren
-            if "PerDay" in info or "Limit 0" in info or "free_tier" in info and "PerMinute" not in info:
-                raise QuotaError(last)
-            log(f"{last} ... warte {40 * (attempt + 1)}s")
-            time.sleep(40 * (attempt + 1))
-            continue
-        last = f"{model}: HTTP {r.status_code} {r.text[:800]}"
+            last = f"{model}: HTTP 429 ({info[:200]})"
+            if "PerMinute" in info and "Limit 0" not in info and attempt < 2:
+                log(f"{last} ... Minutenlimit, warte 65s")
+                time.sleep(65)
+                continue
+            raise QuotaError(last)
+        last = f"{model}: HTTP {r.status_code} {r.text[:400]}"
         if r.status_code in (400, 403, 404):
             break
-        log(f"{last[:200]} ... warte {30 * (attempt + 1)}s")
-        time.sleep(30 * (attempt + 1))
-    raise QuotaError(last) if last and "Kontingent" in last else RuntimeError(last)
+        time.sleep(20)
+    raise RuntimeError(last)
  
  
 def with_fallback(models, fn):
@@ -169,6 +172,122 @@ Liefere ein Faktendossier auf Deutsch, KEIN Skript:
     if len(dossier) < 1500:
         raise RuntimeError("Dossier zu kurz, Recherche fehlgeschlagen:\n" + dossier)
     return dossier, sources
+ 
+ 
+FEEDS = [
+    ("SRF News", "https://www.srf.ch/news/bnf/rss/1646"),
+    ("SRF Schweiz", "https://www.srf.ch/news/bnf/rss/1890"),
+    ("SRF International", "https://www.srf.ch/news/bnf/rss/1922"),
+    ("SRF Wirtschaft", "https://www.srf.ch/news/bnf/rss/1926"),
+    ("NZZ", "https://www.nzz.ch/recent.rss"),
+    ("NZZ Wirtschaft", "https://www.nzz.ch/wirtschaft.rss"),
+    ("Handelszeitung", "https://www.handelszeitung.ch/rss.xml"),
+    ("tagesschau", "https://www.tagesschau.de/index~rss2.xml"),
+    ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
+    ("BBC Business", "https://feeds.bbci.co.uk/news/business/rss.xml"),
+    ("Guardian World", "https://www.theguardian.com/world/rss"),
+    ("Guardian Business", "https://www.theguardian.com/business/rss"),
+    ("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+    ("TechCrunch", "https://techcrunch.com/feed/"),
+    ("The Verge", "https://www.theverge.com/rss/index.xml"),
+    ("persoenlich.com", "https://www.persoenlich.com/rss"),
+    ("Marketing Week", "https://www.marketingweek.com/feed/"),
+    ("SportBusiness", "https://www.sportbusiness.com/feed/"),
+    ("Carbon Brief", "https://www.carbonbrief.org/feed"),
+    ("STAT News", "https://www.statnews.com/feed/"),
+    ("ScienceDaily", "https://www.sciencedaily.com/rss/top/science.xml"),
+    ("Space.com", "https://www.space.com/feeds/all"),
+]
+ 
+ 
+def fetch_feeds(hours=36, per_feed=15):
+    """Holt aktuelle Meldungen aus festen RSS Feeds (ohne Google Suche)."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    cutoff = datetime.now(timezone.utc).timestamp() - hours * 3600
+    items, ok = [], 0
+    for src, url in FEEDS:
+        try:
+            r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0 (MorningBriefing RSS reader)"})
+            r.raise_for_status()
+            root = ET.fromstring(r.content)
+        except Exception as e:
+            log(f"Feed {src} nicht lesbar: {str(e)[:80]}")
+            continue
+        ok += 1
+        n = 0
+        for it in root.iter():
+            tag = it.tag.split("}")[-1]
+            if tag not in ("item", "entry"):
+                continue
+            get = lambda *names: next((c.text or c.get("href") or "" for c in it if c.tag.split("}")[-1] in names), "")
+            title, link = get("title").strip(), get("link").strip()
+            desc = re.sub(r"<[^>]+>", " ", get("description", "summary", "content")).strip()
+            desc = re.sub(r"\s+", " ", html.unescape(desc))[:350]
+            when = get("pubDate", "updated", "published", "date")
+            ts = None
+            try:
+                ts = parsedate_to_datetime(when).timestamp()
+            except Exception:
+                try:
+                    ts = datetime.fromisoformat(when.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    pass
+            if not title or (ts and ts < cutoff):
+                continue
+            items.append(f"[{src}] {title} | {desc} | {link}")
+            n += 1
+            if n >= per_feed:
+                break
+    log(f"RSS: {ok}/{len(FEEDS)} Feeds gelesen, {len(items)} Meldungen")
+    if len(items) < 20:
+        raise RuntimeError("Zu wenige RSS Meldungen")
+    return items
+ 
+ 
+def research_rss(model, instr, recent, items):
+    log(f"Recherche aus RSS Feeds mit {model}")
+    prompt = f"""Heute ist {DATUM_LANG}, Zeitzone Europe/Zurich.
+Du bist Rechercheur für ein persönliches Morgen News Briefing. Unten stehen aktuelle Meldungen aus RSS Feeds
+(Format: [Quelle] Titel | Anriss | Link). Wähle gemäss diesen Anweisungen die wichtigsten und interessantesten aus:
+ 
+{instr}
+ 
+Bereits behandelte Themen der letzten Tage (nicht wiederholen, ausser es gibt eine echte neue Entwicklung):
+{recent}
+ 
+Liefere ein Faktendossier auf Deutsch, KEIN Skript:
+- 6 bis 9 Geschichten, nach Wichtigkeit sortiert, jeweils mit: Was ist passiert, konkrete Zahlen und Namen,
+  warum es wichtig ist, Quelle und Link.
+- Dazu Vorschläge für "Kurz erklärt", "Zahl des Tages" und "Wildcard".
+- Verwende NUR Fakten aus den Meldungen unten. Allgemeines Hintergrundwissen zur Einordnung ist erlaubt, aber
+  als solches erkennbar und ohne erfundene Zahlen. Wenn ein Anriss zu dünn ist, lieber weglassen.
+ 
+MELDUNGEN:
+""" + "\n".join(items[:250])
+    resp = post(model, {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.4}})
+    dossier = text_of(resp)
+    if len(dossier) < 1500:
+        raise RuntimeError("Dossier zu kurz:\n" + dossier[:500])
+    return dossier, []
+ 
+ 
+def working_models(models):
+    """Testet kurz, welche Modelle überhaupt antworten (ohne Google Suche)."""
+    good = []
+    for m in models:
+        try:
+            post(m, {"contents": [{"parts": [{"text": "Antworte nur mit: OK"}]}]}, timeout=60)
+            log(f"Test {m}: OK")
+            good.append(m)
+            if len(good) >= 3:
+                break
+        except Exception as e:
+            log(f"Test {m}: {str(e)[:200]}")
+    if not good:
+        raise RuntimeError("Kein Gemini Modell antwortet, auch ohne Google Suche. Der Schlüssel bzw. das Google "
+                           "Projekt hat kein nutzbares Kontingent (Abrechnung oder neues Projekt nötig).")
+    return good
  
  
 def write_script(model, instr, dossier):
@@ -339,11 +458,20 @@ def main():
     ensure_cover()
     idx = SITE / "episodes.json"
     eps = json.loads(idx.read_text()) if idx.exists() else []
+    if any(e["date"] == DATE for e in eps) and os.environ.get("FORCE") != "1":
+        log(f"Folge für {DATE} existiert schon, nichts zu tun.")
+        return
     eps = [e for e in eps if e["date"] != DATE]
  
     instr = load_instructions()
-    models = pick_text_models()
-    dossier, grounding = with_fallback(models, lambda m: research(m, instr, recent_topics(eps)))
+    models = working_models(pick_text_models())
+    recent = recent_topics(eps)
+    try:
+        dossier, grounding = with_fallback(models[:2], lambda m: research(m, instr, recent))
+    except Exception as e:
+        log(f"Google Suche nicht nutzbar, weiche auf RSS Feeds aus ({str(e)[:150]})")
+        items = fetch_feeds()
+        dossier, grounding = with_fallback(models, lambda m: research_rss(m, instr, recent, items))
     script, notes = with_fallback(models, lambda m: write_script(m, instr, dossier))
     OUT.mkdir(exist_ok=True)
     (OUT / f"{DATE}-skript.txt").write_text(script, encoding="utf-8")
