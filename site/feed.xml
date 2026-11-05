@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Morning Briefing</title>
+    <link>https://lu1s-15.github.io/morning-briefing/</link>
+    <language>de</language>
+    <description>Persönliches Morning Briefing: Politik, Wirtschaft, Finanzen und mehr. Automatisch erstellt mit KI, Angaben ohne Gewähr.</description>
+    <itunes:author>Morning Briefing</itunes:author>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:block>Yes</itunes:block>
+    <itunes:image href="https://lu1s-15.github.io/morning-briefing/cover.jpg"/>
+    <item>
+      <title>5. November: US-Erdrutsch, SMI-Rekord und die Kehrtwende beim Verbrenner-Aus</title>
+      <description><![CDATA[Themen: US-Midterms und SMI-Rekord, Sequoia VC Fokussierung, BVG-Mindestzins, Schweizer Immobilien Speckgürtel, EU-Verbrenner-Aus, CVS Health Entflechtung, Google Skandal Finnland, Stanford BRP KI-Entdeckung, Kurz erklärt: Altermagnetismus, Zahl des Tages: 4, Wildcard: Pizza-Kulturkampf<br/>SRF News: <a href="https://www.srf.ch/news/wirtschaft/finanzmaerkte-nach-midterms-gemischtes-bild-bei-tech-aktien-smi-erstmals-ueber-15-000-punkte">https://www.srf.ch/news/wirtschaft/finanzmaerkte-nach-midterms-gemischtes-bild-bei-tech-aktien-smi-erstmals-ueber-15-000-punkte</a><br/>NZZ Wirtschaft: <a href="https://www.nzz.ch/wirtschaft/midterms-in-den-usa-die-blaue-welle-verunsichert-die-boersen-ld.10053926">https://www.nzz.ch/wirtschaft/midterms-in-den-usa-die-blaue-welle-verunsichert-die-boersen-ld.10053926</a><br/>BBC Business: <a href="https://www.bbc.co.uk/news/articles/cv8ez3p3ge5ko">https://www.bbc.co.uk/news/articles/cv8ez3p3ge5ko</a><br/>TechCrunch: <a href="https://techcrunch.com/2026/11/04/sequoia-hits-rewind-undoing-20-years-of-expansion/">https://techcrunch.com/2026/11/04/sequoia-hits-rewind-undoing-20-years-of-expansion/</a><br/>SRF Schweiz: <a href="https://www.srf.ch/news/schweiz/versicherte-profitieren-hoeherer-mindestzins-bei-pensionskassen-das-muessen-sie-wissen">https://www.srf.ch/news/schweiz/versicherte-profitieren-hoeherer-mindestzins-bei-pensionskassen-das-muessen-sie-wissen</a><br/>NZZ Wirtschaft: <a href="https://www.nzz.ch/wirtschaft/google-laesst-in-finnland-illegal-wald-roden-skandal-um-530-hektar-ld.10046380">https://www.nzz.ch/wirtschaft/google-laesst-in-finnland-illegal-wald-roden-skandal-um-530-hektar-ld.10046380</a><br/>ScienceDaily: <a href="https://www.sciencedaily.com/releases/2026/11/261104004909.htm">https://www.sciencedaily.com/releases/2026/11/261104004909.htm</a><br/>NZZ Wirtschaft: <a href="https://www.nzz.ch/wirtschaft/der-speckguertel-triumphiert-kluge-hauskaeufer-und-investoren-sollten-einen-grossen-bogen-um-die-staedte-machen-ld.10038459">https://www.nzz.ch/wirtschaft/der-speckguertel-triumphiert-kluge-hauskaeufer-und-investoren-sollten-einen-grossen-bogen-um-die-staedte-machen-ld.10038459</a><br/>SRF International: <a href="https://www.srf.ch/news/international/eu-parlament-eu-abgeordnete-stimmen-fuer-aufweichung-des-verbrenner-aus">https://www.srf.ch/news/international/eu-parlament-eu-abgeordnete-stimmen-fuer-aufweichung-des-verbrenner-aus</a><br/>Guardian Business: <a href="https://www.theguardian.com/us-news/2026/nov/04/cvs-health-pharmacy-insurance">https://www.theguardian.com/us-news/2026/nov/04/cvs-health-pharmacy-insurance</a><br/>STAT News: <a href="https://www.statnews.com/2026/11/04/cvs-splits-pharmacy-from-insurance/">https://www.statnews.com/2026/11/04/cvs-splits-pharmacy-from-insurance/</a><br/>Guardian World: <a href="https://www.theguardian.com/food/2026/nov/05/italian-chef-sacked-refusing-pineapple-on-pizza-australia-fair-work">https://www.theguardian.com/food/2026/nov/05/italian-chef-sacked-refusing-pineapple-on-pizza-australia-fair-work</a><br/><br/>Automatisch mit KI erstellt. Angaben ohne Gewähr, bitte bei Bedarf in den Quellen prüfen.]]></description>
+      <pubDate>Thu, 05 Nov 2026 08:15:36 +0000</pubDate>
+      <guid isPermaLink="false">briefing-2026-11-05</guid>
+      <enclosure url="https://github.com/Lu1s-15/morning-briefing/releases/download/folge-2026-11-05/2026-11-05.mp3" length="5485907" type="audio/mpeg"/>
+      <itunes:duration>685</itunes:duration>
+    </item>
+  </channel>
+</rss>
